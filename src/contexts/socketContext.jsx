@@ -15,23 +15,16 @@ export const useSocket = () => {
 export const SocketProvider = ({ children }) => {
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
+  // The server broadcasts user_status {userId, status} to everyone on connect
+  // and disconnect. There is no roster endpoint, so this only knows about
+  // people who changed state while we were connected — members not in here
+  // fall back to their last_seen timestamp.
+  const [onlineUserIds, setOnlineUserIds] = useState(() => new Set());
 
-  //Subscribing to a token from zustand
   const token = useAuthStore((state) => state.token);
 
   useEffect(() => {
-    //If there is no token disconnect the socket.
-    if (!token) {
-      console.log(" No token, disconnecting socket");
-      if (socket) {
-        socket.disconnect();
-        setSocket(null);
-        setIsConnected(false);
-      }
-      return;
-    }
-
-    console.log(" Initializing socket connection with token...");
+    if (!token) return;
 
     const newSocket = io(
       import.meta.env.VITE_SOCKET_URL || "http://localhost:3000",
@@ -43,35 +36,38 @@ export const SocketProvider = ({ children }) => {
       }
     );
 
-    newSocket.on("connect", () => {
-      console.log("Socket connected", newSocket.id);
-      setIsConnected(true);
-    });
+    const handleStatus = ({ userId, status }) => {
+      if (!userId) return;
+      setOnlineUserIds((prev) => {
+        const next = new Set(prev);
+        if (status === "online") next.add(String(userId));
+        else next.delete(String(userId));
+        return next;
+      });
+    };
 
-    newSocket.on("disconnect", () => {
-      console.log(" Socket disconnected");
-      setIsConnected(false);
-    });
-
+    newSocket.on("connect", () => setIsConnected(true));
+    newSocket.on("disconnect", () => setIsConnected(false));
     newSocket.on("connect_error", (error) => {
-      console.error(" Socket connection error:", error.message);
+      console.error("Socket connection error:", error.message);
       setIsConnected(false);
     });
-
-    newSocket.on("error", (error) => {
-      console.error(" Socket error:", error);
-    });
+    newSocket.on("error", (error) => console.error("Socket error:", error));
+    newSocket.on("user_status", handleStatus);
 
     setSocket(newSocket);
 
     return () => {
-      console.log(" Disconnecting socket...");
+      newSocket.off("user_status", handleStatus);
       newSocket.disconnect();
+      setSocket(null);
+      setIsConnected(false);
+      setOnlineUserIds(new Set());
     };
-  }, [token]); //Dependency on the token: we reconnect when it changes
+  }, [token]);
 
   return (
-    <SocketContext.Provider value={{ socket, isConnected }}>
+    <SocketContext.Provider value={{ socket, isConnected, onlineUserIds }}>
       {children}
     </SocketContext.Provider>
   );

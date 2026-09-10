@@ -1,44 +1,43 @@
-import { ActionButtons } from "../ui/actionButton";
-import { BaseModal } from "./BaseModal";
+import { useState } from "react";
+import { BaseModal } from "./baseModal";
 import { useDeleteChannel } from "../../hooks/channel/useDeleteChannel";
 import { useChannelContext } from "../../hooks/channel/useChannelContext";
+import { apiErrorMessage } from "../../lib/apiError";
 
 export default function DeleteChannel({ open, onClose }) {
   const { deleteChannel, isPending } = useDeleteChannel();
   const { activeChannel } = useChannelContext();
+  const [serverError, setServerError] = useState("");
 
   const handleDelete = async () => {
     try {
-      await deleteChannel({ channelId: activeChannel.id });
+      await deleteChannel({
+        channelId: activeChannel.id,
+        name: activeChannel.name,
+      });
       onClose();
     } catch (error) {
-      console.error("Error deleting", error);
+      setServerError(apiErrorMessage(error, "Couldn't delete the channel"));
     }
   };
 
   return (
-    <BaseModal open={open} onClose={onClose}>
-      <div>
-        <h2 className="text-xl font-semibold mb-4 text-red-500">
-          Delete Channel
-        </h2>
-        <p className="text-gray-400 text-base mb-2">
-          Are you sure you want to delete the channel{" "}
-          <span className="font-semibold text-white">
-            #{activeChannel?.name}
-          </span>
-          ?
-        </p>
-        <p className="text-gray-500 text-sm mb-6">
-          This action cannot be undone.
-        </p>
-        <ActionButtons
-          onCancel={onClose}
-          onSubmit={handleDelete}
-          cancelText="Cancel"
-          submitText={isPending ? "Deleting..." : "Yes, Delete"}
-          disabled={isPending}
-        />
+    <BaseModal
+      open={open}
+      onClose={onClose}
+      title="Delete channel?"
+      subtitle="This cannot be undone"
+      cancelLabel="Cancel"
+      error={serverError}
+      onDismissError={() => setServerError("")}
+      confirmLabel={isPending ? "Deleting…" : "Delete channel"}
+      onConfirm={handleDelete}
+      busy={isPending}
+      danger
+    >
+      <div className="rounded-xl border border-danger-line bg-danger-bg px-3.5 py-[13px] text-[12.5px] text-danger-ink-2 text-pretty">
+        All messages and members of #{activeChannel?.name} will be deleted
+        permanently.
       </div>
     </BaseModal>
   );

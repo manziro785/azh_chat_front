@@ -1,20 +1,25 @@
-import { useMutation } from "@tanstack/react-query";
-import { queryClient } from "../../lib/queryClient";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createChannel } from "../../api/channel";
+import { toast } from "../../store/useToastStore";
 
 export const useCreateChannel = () => {
-  const handleSuccess = (data) => {
-    console.log(data);
-    queryClient.invalidateQueries({ queryKey: ["channels"] });
-  };
+  const queryClient = useQueryClient();
 
-  const channelMutation = useMutation({
+  const mutation = useMutation({
     mutationFn: (params) => createChannel(params),
-    onSuccess: handleSuccess,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
+      const channel = data?.channel;
+      toast.ok(
+        "Channel created",
+        channel ? `#${channel.name} — invite code ${channel.admin_code}` : ""
+      );
+    },
   });
 
   return {
-    createChannel: channelMutation.mutateAsync,
-    isPending: channelMutation.isPending,
+    createChannel: mutation.mutateAsync,
+    isPending: mutation.isPending,
+    error: mutation.error,
   };
 };

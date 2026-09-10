@@ -5,27 +5,30 @@ export const ChannelContext = createContext();
 
 export const ChannelProvider = ({ children }) => {
   const [activeChannelId, setActiveChannelId] = useState(null);
-  const { data: channels, isLoading } = useGetChannel();
+  const { data, isPending, error, refetch } = useGetChannel();
 
-  const activeChannel = useMemo(() => {
-    if (!activeChannelId || !channels) return null;
-    return channels.channels.find((ch) => ch.id === activeChannelId) || null;
-  }, [channels, activeChannelId]);
+  const channels = useMemo(() => data?.channels ?? [], [data]);
 
-  const setActiveChannel = (channel) => {
-    setActiveChannelId(channel?.id || null);
-  };
+  // Derived, not stored: when a channel is deleted or we are removed from it,
+  // the selection falls back to null on its own.
+  const activeChannel = useMemo(
+    () => channels.find((c) => c.id === activeChannelId) ?? null,
+    [channels, activeChannelId]
+  );
+
+  const value = useMemo(
+    () => ({
+      channels,
+      activeChannel,
+      setActiveChannel: (channel) => setActiveChannelId(channel?.id ?? null),
+      isLoading: isPending,
+      error,
+      refetchChannels: refetch,
+    }),
+    [channels, activeChannel, isPending, error, refetch]
+  );
 
   return (
-    <ChannelContext.Provider
-      value={{
-        channels,
-        activeChannel,
-        setActiveChannel,
-        isLoading,
-      }}
-    >
-      {children}
-    </ChannelContext.Provider>
+    <ChannelContext.Provider value={value}>{children}</ChannelContext.Provider>
   );
 };

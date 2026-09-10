@@ -1,116 +1,148 @@
 import { useState } from "react";
-import { ActionButtons } from "../ui/actionButton";
-import { BaseModal } from "./BaseModal";
+import { Check } from "lucide-react";
+import { BaseModal } from "./baseModal";
+import { FormInput } from "../ui/formInput";
+import Avatar from "../ui/avatar";
+import Spinner from "../ui/spinner";
 import { useAddMember } from "../../hooks/members/useAddMember";
+import { useGetChannelMembers } from "../../hooks/members/useGetChannelMembers";
 import { useSearchUsers } from "../../hooks/useSearchUsers";
-import { X, Search, UserPlus } from "lucide-react";
+import { useDebouncedValue } from "../../hooks/useDebouncedValue";
+import { apiErrorMessage } from "../../lib/apiError";
 
 export default function AddMember({ open, onClose }) {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedUser, setSelectedUser] = useState(null);
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState(null);
+  const [serverError, setServerError] = useState("");
+
   const { addMember, isPending } = useAddMember();
-  const { data, isLoading } = useSearchUsers(searchQuery);
-  const users = data?.users || [];
+  const debouncedQuery = useDebouncedValue(query.trim(), 300);
+  const { data, isFetching } = useSearchUsers(debouncedQuery);
+  const { data: membersData } = useGetChannelMembers();
 
-  const handleAdd = async () => {
-    if (!selectedUser) return;
+  // Search returns everyone, including people already in this channel —
+  // picking one of those is a guaranteed 409 from the server.
+  const memberIds = new Set(
+    (membersData?.members ?? []).map((m) => String(m.id))
+  );
 
-    try {
-      await addMember({ userId: selectedUser.id });
-      setSearchQuery("");
-      setSelectedUser(null);
-      onClose();
-    } catch (error) {
-      console.error("Error adding member:", error);
-    }
-  };
+  const users = data?.users ?? [];
+  const hasQuery = debouncedQuery.length > 0;
+  const searching = hasQuery && isFetching;
+  const noResults = hasQuery && !isFetching && users.length === 0;
 
   const handleClose = () => {
-    setSearchQuery("");
-    setSelectedUser(null);
+    setQuery("");
+    setSelected(null);
+    setServerError("");
     onClose();
   };
 
+  const handleAdd = async () => {
+    if (!selected) return;
+    try {
+      await addMember({ userId: selected.id, nickname: selected.nickname });
+      handleClose();
+    } catch (error) {
+      setServerError(apiErrorMessage(error, "Couldn't add the member"));
+    }
+  };
+
   return (
-    <BaseModal open={open} onClose={handleClose}>
-      <div>
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold">Add Member</h2>
-          <X
-            onClick={handleClose}
-            className="cursor-pointer hover:text-gray-400 transition"
-          />
-        </div>
+    <BaseModal
+      open={open}
+      onClose={handleClose}
+      title="Add member"
+      subtitle="Search by nickname"
+      cancelLabel="Cancel"
+      error={serverError}
+      onDismissError={() => setServerError("")}
+      confirmLabel={isPending ? "Adding…" : "Add member"}
+      onConfirm={handleAdd}
+      busy={isPending}
+      confirmDisabled={!selected}
+    >
+      <FormInput
+        label="Nickname"
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setSelected(null);
+        }}
+        placeholder="Start typing…"
+        disabled={isPending}
+      />
 
-        <div className="mb-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setSelectedUser(null);
-              }}
-              placeholder="Search users by nickname..."
-              className="w-full bg-[#1a1d29] border border-gray-600 rounded-lg pl-10 pr-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+      {/* Fixed min-height so the panel never jumps between its three states. */}
+      <div className="min-h-[130px] rounded-xl border border-line-bubble bg-inset p-1.5">
+        {searching && (
+          <div className="flex h-[118px] items-center justify-center gap-[9px] text-[12.5px] text-muted">
+            <Spinner className="text-accent" /> Searching…
           </div>
-        </div>
+        )}
 
-        <div className="mb-6 max-h-60 overflow-y-auto">
-          {isLoading && searchQuery.trim() && (
-            <p className="text-gray-500 text-center py-4">Searching...</p>
-          )}
-
-          {!isLoading && searchQuery.trim() && users.length === 0 && (
-            <p className="text-gray-500 text-center py-4">No users found</p>
-          )}
-
-          {!isLoading && users.length > 0 && (
-            <div className="space-y-2">
-              {users.map((user) => (
-                <div
-                  key={user.id}
-                  onClick={() => setSelectedUser(user)}
-                  className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition ${
-                    selectedUser?.id === user.id
-                      ? "bg-blue-600"
-                      : "bg-[#252936] hover:bg-[#313747]"
-                  }`}
-                >
-                  {user.avatar_url ? (
-                    <img
-                      src={user.avatar_url}
-                      alt={user.nickname}
-                      className="w-10 h-10 rounded-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center">
-                      <span className="text-sm font-semibold">
-                        {user.nickname?.charAt(0).toUpperCase() || "?"}
-                      </span>
-                    </div>
-                  )}
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{user.nickname}</p>
-                    <p className="text-xs text-gray-500">{user.email}</p>
-                  </div>
-                  {selectedUser?.id === user.id && (
-                    <UserPlus className="w-5 h-5 text-white" />
-                  )}
-                </div>
-              ))}
+        {noResults && (
+          <div className="flex h-[118px] flex-col items-center justify-center gap-1.5 px-5 text-center">
+            <div className="text-[13px] font-semibold">No users found</div>
+            <div className="text-[12px] text-muted text-pretty">
+              Try the full nickname, or share the invite code instead.
             </div>
-          )}
-        </div>
-        <ActionButtons
-          onCancel={handleClose}
-          onSubmit={handleAdd}
-          cancelText="Cancel"
-          submitText={isPending ? "Adding..." : "Add Member"}
-          disabled={isPending || !selectedUser}
-        />
+          </div>
+        )}
+
+        {!hasQuery && (
+          <div className="flex h-[118px] items-center justify-center px-5 text-center text-[12px] text-muted">
+            Start typing a nickname to find people.
+          </div>
+        )}
+
+        {hasQuery &&
+          !searching &&
+          users.map((user) => {
+            const picked = selected?.id === user.id;
+            const alreadyMember = memberIds.has(String(user.id));
+
+            return (
+              <div
+                key={user.id}
+                onClick={() => !alreadyMember && setSelected(user)}
+                className={`flex items-center gap-2.5 rounded-[10px] px-[9px] py-2 transition-colors ${
+                  alreadyMember
+                    ? "cursor-default opacity-55"
+                    : picked
+                      ? "cursor-pointer bg-[#182035]"
+                      : "cursor-pointer hover:bg-[#181d27]"
+                }`}
+              >
+                <Avatar name={user.nickname} src={user.avatar_url} size={30} />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13px] font-medium">
+                    {user.nickname}
+                  </div>
+                  <div className="truncate text-[11.5px] text-faint">
+                    {user.email}
+                  </div>
+                </div>
+                {alreadyMember ? (
+                  <span className="flex-none text-[11px] text-faint">
+                    Already in channel
+                  </span>
+                ) : (
+                  <span
+                    className={`grid h-[18px] w-[18px] flex-none place-items-center rounded-full border-[1.5px] ${
+                      picked
+                        ? "border-accent bg-accent text-white"
+                        : "border-line-dashed"
+                    }`}
+                  >
+                    {picked && (
+                      <Check className="h-2.5 w-2.5" strokeWidth={3} />
+                    )}
+                  </span>
+                )}
+              </div>
+            );
+          })}
       </div>
     </BaseModal>
   );

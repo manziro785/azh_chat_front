@@ -1,68 +1,74 @@
 import { useState } from "react";
-import { BaseModal } from "./BaseModal";
-import { ActionButtons } from "../ui/actionButton";
+import { BaseModal } from "./baseModal";
+import { FormInput } from "../ui/formInput";
 import { useJoinChannel } from "../../hooks/channel/useJoinChannel";
+import { apiErrorMessage } from "../../lib/apiError";
+import { INVITE_CODE_LENGTH, withHash } from "../../lib/invite";
 
-export default function EnterCodeModal({ open, onClose = () => {} }) {
+export default function EnterCodeModal({ open, onClose }) {
   const { joinChannel, isPending } = useJoinChannel();
-  const [value, setValue] = useState("");
-  const [error, setError] = useState("");
-  const handleChange = (e) => {
-    setError("");
-    let input = e.target.value;
-    if (!input.startsWith("#")) {
-      input = "#" + input;
-    }
-    input = "#" + input.slice(1).replace(/[^A-Za-z0-9]/g, "");
-    input = input.toUpperCase();
-    if (input.length > 7) {
-      input = input.slice(0, 7);
-    }
-    setValue(input);
-  };
+  const [code, setCode] = useState("");
+  const [fieldError, setFieldError] = useState("");
+  const [serverError, setServerError] = useState("");
 
-  const handleSubmit = async () => {
-    if (value.length < 7) {
-      setError("Code must be 6 characters");
-      return;
-    }
-    try {
-      await joinChannel(value);
-      setValue("");
-      setError("");
-      onClose();
-    } catch (err) {
-      setError(err.response?.data?.message || "Failed to join channel");
-    }
+  // State holds the six characters; the # is presentation only.
+  const handleChange = (e) => {
+    setFieldError("");
+    setServerError("");
+    setCode(
+      e.target.value
+        .replace(/[^A-Za-z0-9]/g, "")
+        .toUpperCase()
+        .slice(0, INVITE_CODE_LENGTH)
+    );
   };
 
   const handleClose = () => {
-    setValue("");
-    setError("");
+    setCode("");
+    setFieldError("");
+    setServerError("");
     onClose();
   };
 
+  const handleSubmit = async () => {
+    if (code.length !== INVITE_CODE_LENGTH) {
+      setFieldError(`The code is exactly ${INVITE_CODE_LENGTH} characters`);
+      return;
+    }
+
+    try {
+      await joinChannel(withHash(code));
+      handleClose();
+    } catch (error) {
+      setServerError(
+        apiErrorMessage(error, "No channel with this code. Check it with the admin.")
+      );
+    }
+  };
+
   return (
-    <BaseModal open={open} onClose={handleClose} showCloseButton={false}>
-      <div>
-        <p className="text-gray-400 text-lg mb-2">Enter Admin code of group</p>
-        <input
-          type="text"
-          placeholder="#ABC123"
-          value={value}
-          onChange={handleChange}
-          disabled={isPending}
-          className="w-full px-3 mt-2 py-2 text-xl border-2 border-[#363946] placeholder-[#6A7282] text-[var(--color-text)] bg-[#1A1D29] rounded-lg focus:ring-2 focus:ring-[#363946] disabled:opacity-50"
-        />
-        {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
-        <ActionButtons
-          onCancel={handleClose}
-          onSubmit={handleSubmit}
-          cancelText="Close"
-          submitText={isPending ? "Joining..." : "Join"}
-          disabled={isPending || value.length < 7}
-        />
-      </div>
+    <BaseModal
+      open={open}
+      onClose={handleClose}
+      title="Join a channel"
+      subtitle="Ask an admin for the 6-character code"
+      error={serverError}
+      onDismissError={() => setServerError("")}
+      confirmLabel={isPending ? "Joining…" : "Join"}
+      onConfirm={handleSubmit}
+      busy={isPending}
+      confirmDisabled={code.length !== INVITE_CODE_LENGTH}
+    >
+      <FormInput
+        label="Invite code"
+        value={withHash(code)}
+        onChange={handleChange}
+        placeholder="ABC123"
+        mono
+        error={fieldError}
+        hint="6 characters, uppercase — the # is added for you"
+        disabled={isPending}
+      />
     </BaseModal>
   );
 }

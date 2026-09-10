@@ -1,155 +1,200 @@
-import { useState, useEffect, useRef } from "react";
-import { Hash, Send, MessageSquare, Menu, X } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
 import { useChannelContext } from "../hooks/channel/useChannelContext";
 import { useChannelMessages } from "../hooks/message/useChannelMessages";
 import { useGetChannelMessagesHistory } from "../hooks/message/useGetChannelMessagesHistory";
-import SideBar from "../components/common/SideBar";
+import { useGetProfile } from "../hooks/profile/useGetProfile";
+import { normalizeMessage } from "../lib/message";
+import { buildFeed } from "../lib/feed";
+import { withHash } from "../lib/invite";
+import { toast } from "../store/useToastStore";
+
+import SideBar from "../components/common/sideBar";
 import InfoBlock from "../components/common/infoBlock";
 import InputBlock from "../components/common/inputBlock";
-import { CreateGroupModal } from "../components/popups/createGroupModal";
-import { EditGroupModal } from "../components/popups/EditGroupModal";
-import { EditProfileModal } from "../components/popups/EditProfileModal";
-import EnterCodeModal from "../components/popups/EnterCodeModal";
-import DeleteMember from "../components/popups/deleteMember";
-import DeleteChannel from "../components/popups/deleteChannel";
-import { useGetProfile } from "../hooks/profile/useGetProfile";
 import MessageArea from "../components/common/messageArea";
 import Header from "../components/common/header";
 import NoChat from "../components/common/noChat";
 
+import { CreateGroupModal } from "../components/popups/createGroupModal";
+import { EditGroupModal } from "../components/popups/editGroupModal";
+import { EditProfileModal } from "../components/popups/editProfileModal";
+import EnterCodeModal from "../components/popups/enterCodeModal";
+import AddMember from "../components/popups/addMember";
+import DeleteMember from "../components/popups/deleteMember";
+import DeleteChannel from "../components/popups/deleteChannel";
+
 export function Dashboard() {
-  const [message, setMessage] = useState("");
+  // The draft is stamped with the channel it was typed in. Keeping a bare
+  // string carried a half-written message into the next channel, where it
+  // could be sent to the wrong people.
+  const [draft, setDraft] = useState({ channelId: null, text: "" });
   const [modal, setModal] = useState(null);
   const [selectedMember, setSelectedMember] = useState(null);
   const [showSidebar, setShowSidebar] = useState(false);
-  const [showInfo, setShowInfo] = useState(false);
+  // The details panel is docked on desktop and a drawer on mobile, so it
+  // starts open only when there is room for it.
+  const [showInfo, setShowInfo] = useState(
+    () => typeof window !== "undefined" && window.innerWidth >= 1024
+  );
+
   const { activeChannel } = useChannelContext();
-  const { data } = useGetProfile();
-  const messagesEndRef = useRef(null);
-  const closeSidebar = () => setShowSidebar(false);
-  const closeInfo = () => setShowInfo(false);
-  const id_current_user = data?.user?.id ? String(data.user.id) : null;
-  const uniqueIds = new Set();
-  const { data: historyData } = useGetChannelMessagesHistory();
-  const openModal = (type) => setModal(type);
-  const { messages: liveMessages, sendMessage } = useChannelMessages();
-  const historyMessages = historyData?.messages || [];
+  const { data: profileData } = useGetProfile();
+  const { data: historyData, isPending: historyLoading } =
+    useGetChannelMessagesHistory();
+  const {
+    messages: liveMessages,
+    typingUsers,
+    sendMessage,
+    notifyTyping,
+    isConnected,
+  } = useChannelMessages();
 
-  const allMessages = [...historyMessages, ...liveMessages]
-    .filter((msg) => {
-      if (uniqueIds.has(msg.id)) return false;
-      uniqueIds.add(msg.id);
-      return true;
-    })
-    .sort(
-      (a, b) =>
-        new Date(a.created_at || a.createdAt) -
-        new Date(b.created_at || b.createdAt)
-    );
+  const currentUserId = profileData?.user?.id
+    ? String(profileData.user.id)
+    : null;
+
+  const message = draft.channelId === activeChannel?.id ? draft.text : "";
+
+  const feed = useMemo(() => {
+    const history = (historyData?.messages ?? []).map(normalizeMessage);
+    const seen = new Set();
+    const merged = [...history, ...liveMessages]
+      .filter((m) => {
+        if (seen.has(m.id)) return false;
+        seen.add(m.id);
+        return true;
+      })
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+    return buildFeed(merged, currentUserId);
+  }, [historyData, liveMessages, currentUserId]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [allMessages.length]);
-
-  useEffect(() => {
-    if (showSidebar || showInfo) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "auto";
-    }
+    const locked = showSidebar || showInfo;
+    if (!locked) return;
+    // Only the drawers need this, and only below lg — desktop panels are docked.
+    if (window.innerWidth >= 1024) return;
+    document.body.style.overflow = "hidden";
     return () => {
-      document.body.style.overflow = "auto";
+      document.body.style.overflow = "";
     };
   }, [showSidebar, showInfo]);
 
+  const openModal = (type) => setModal(type);
   const closeModal = () => {
     setModal(null);
     setSelectedMember(null);
   };
 
-  const handleDeleteClick = (user) => {
-    setSelectedMember(user);
+  const handleDeleteClick = (member) => {
+    setSelectedMember(member);
     openModal("delete_member");
   };
 
   const handleSendMessage = () => {
-    if (!message.trim()) return;
-    sendMessage(message.trim());
-    setMessage("");
+    if (!message.trim() || !isConnected) return;
+    sendMessage(message);
+    setDraft({ channelId: activeChannel?.id ?? null, text: "" });
+  };
+
+  const handleDraftChange = (value) => {
+    setDraft({ channelId: activeChannel?.id ?? null, text: value });
+    notifyTyping();
+  };
+
+  const copyInvite = async () => {
+    if (!activeChannel) return;
+    const code = withHash(activeChannel.admin_code);
+    try {
+      await navigator.clipboard.writeText(code);
+      toast.ok("Invite code copied", `${code} — paste it anywhere`);
+    } catch {
+      // Clipboard needs a secure context; show the code so it stays usable.
+      toast.warn("Couldn't copy automatically", `Invite code: ${code}`);
+    }
   };
 
   return (
-    <div className="flex h-screen bg-[#1a1d29] text-white overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-canvas text-ink">
       {showSidebar && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
-          onClick={closeSidebar}
+          className="fixed inset-0 z-40 bg-black/60 lg:hidden"
+          onClick={() => setShowSidebar(false)}
         />
       )}
       <div
-        className={`fixed lg:relative inset-y-0 left-0 z-50 transform transition-transform duration-300 ease-in-out lg:transform-none ${
+        className={`fixed inset-y-0 left-0 z-50 transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0 ${
           showSidebar ? "translate-x-0" : "-translate-x-full"
-        } lg:translate-x-0`}
+        }`}
       >
-        <SideBar openModal={openModal} closeSidebar={closeSidebar} />
+        <SideBar
+          openModal={openModal}
+          closeSidebar={() => setShowSidebar(false)}
+        />
       </div>
 
-      <div className="flex-1 flex flex-col w-full lg:w-auto">
+      <main className="flex min-w-0 flex-1 flex-col">
         {activeChannel ? (
           <>
-            <Header setShowSidebar={setShowSidebar} setShowInfo={setShowInfo} />
+            <Header
+              onOpenSidebar={() => setShowSidebar(true)}
+              onToggleInfo={() => setShowInfo((v) => !v)}
+              onCopyInvite={copyInvite}
+            />
+            {/* Keyed by channel so the scroll position resets when switching. */}
             <MessageArea
-              allMessages={allMessages}
-              id_current_user={id_current_user}
-              messagesEndRef={messagesEndRef}
+              key={activeChannel.id}
+              feed={feed}
+              isLoading={historyLoading}
+              typingUsers={typingUsers}
+              channelName={activeChannel.name}
             />
             <InputBlock
               message={message}
-              setMessage={setMessage}
-              handleSendMessage={handleSendMessage}
+              onChange={handleDraftChange}
+              onSend={handleSendMessage}
+              channelName={activeChannel.name}
+              isConnected={isConnected}
             />
           </>
         ) : (
-          <NoChat setShowSidebar={setShowSidebar} />
+          <NoChat
+            onOpenSidebar={() => setShowSidebar(true)}
+            openModal={openModal}
+          />
         )}
-      </div>
+      </main>
 
-      {showInfo && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
-          onClick={closeInfo}
-        />
+      {activeChannel && showInfo && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/60 lg:hidden"
+            onClick={() => setShowInfo(false)}
+          />
+          <div className="fixed inset-y-0 right-0 z-50 lg:relative">
+            <InfoBlock
+              openModal={openModal}
+              handleDeleteClick={handleDeleteClick}
+              onCopyInvite={copyInvite}
+              onClose={() => setShowInfo(false)}
+            />
+          </div>
+        </>
       )}
 
-      <div
-        className={`fixed lg:relative inset-y-0 right-0 z-50 transform transition-transform duration-300 ease-in-out lg:transform-none ${
-          showInfo ? "translate-x-0" : "translate-x-full"
-        } lg:translate-x-0`}
-      >
-        <div className="relative h-full">
-          <button
-            onClick={closeInfo}
-            className="lg:hidden absolute top-4 right-4 z-10 p-2 hover:bg-[#2b2d31] rounded transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
-          <InfoBlock
-            openModal={openModal}
-            handleDeleteClick={handleDeleteClick}
-          />
-        </div>
-      </div>
-
-      <CreateGroupModal open={modal === "group"} onClose={closeModal} />
-      <EditGroupModal open={modal === "edit"} onClose={closeModal} />
-      <EditProfileModal open={modal === "profile"} onClose={closeModal} />
-      <EnterCodeModal open={modal === "code"} onClose={closeModal} />
-      <DeleteChannel open={modal === "delete_channel"} onClose={closeModal} />
-      <DeleteMember
-        open={modal === "delete_member"}
-        onClose={closeModal}
-        member={selectedMember}
-      />
+      {/* Mounted only while open: each dialog seeds its form from current data
+          on mount, which is why none of them need a prop-to-state effect. */}
+      {modal === "group" && <CreateGroupModal open onClose={closeModal} />}
+      {modal === "code" && <EnterCodeModal open onClose={closeModal} />}
+      {modal === "profile" && <EditProfileModal open onClose={closeModal} />}
+      {modal === "edit" && <EditGroupModal open onClose={closeModal} />}
+      {modal === "add_member" && <AddMember open onClose={closeModal} />}
+      {modal === "delete_channel" && (
+        <DeleteChannel open onClose={closeModal} />
+      )}
+      {modal === "delete_member" && selectedMember && (
+        <DeleteMember open onClose={closeModal} member={selectedMember} />
+      )}
     </div>
   );
 }

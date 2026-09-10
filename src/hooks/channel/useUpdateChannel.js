@@ -1,17 +1,16 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { updateChannel } from "../../api/channel";
+import { toast } from "../../store/useToastStore";
 
 export const useUpdateChannel = () => {
   const queryClient = useQueryClient();
+
   const mutation = useMutation({
-    mutationFn: ({ idChannel, channelData }) => {
-      return updateChannel(idChannel, channelData);
-    },
+    mutationFn: ({ idChannel, channelData }) =>
+      updateChannel(idChannel, channelData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
-    },
-    onError: (error) => {
-      alert(error.response?.data?.message || "Failed to update channel");
+      toast.ok("Channel updated");
     },
   });
 

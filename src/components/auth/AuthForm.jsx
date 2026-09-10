@@ -1,8 +1,31 @@
 import { useForm } from "react-hook-form";
-import { useAuth } from "../../hooks/useAuth";
 import { useEffect } from "react";
-import { InputClass } from "../../styles";
-import { Loader2, AlertCircle, X } from "lucide-react";
+import { AlertCircle } from "lucide-react";
+import { useAuth } from "../../hooks/useAuth";
+import {
+  ButtonPrimaryClass,
+  FieldErrorClass,
+  InputClass,
+  InputErrorClass,
+  LabelClass,
+} from "../../styles";
+import AlertBanner from "../ui/alertBanner";
+import Spinner from "../ui/spinner";
+
+function Field({ label, error, children }) {
+  return (
+    <label className="block">
+      <span className={LabelClass}>{label}</span>
+      {children}
+      {error && (
+        <span className={FieldErrorClass}>
+          <AlertCircle className="h-[13px] w-[13px] flex-none" />
+          {error.message}
+        </span>
+      )}
+    </label>
+  );
+}
 
 export default function AuthForm({ tab }) {
   const { submitAuth, isLoading, error, clearError } = useAuth();
@@ -11,16 +34,9 @@ export default function AuthForm({ tab }) {
     handleSubmit,
     watch,
     trigger,
+    clearErrors,
     formState: { errors, isSubmitting },
   } = useForm();
-
-  const onSubmit = async (data) => {
-    try {
-      await submitAuth(data, tab);
-    } catch (err) {
-      // Ошибка уже обработана в useAuth
-    }
-  };
 
   const password = watch("password");
   const confirmPassword = watch("confirmPassword");
@@ -29,139 +45,108 @@ export default function AuthForm({ tab }) {
     if (confirmPassword) trigger("confirmPassword");
   }, [password, confirmPassword, trigger]);
 
-  // Очищаем ошибку при смене таба
+  // Switching tabs starts a different form: drop both the server banner and
+  // any field errors left over from the other tab. Values are kept on purpose,
+  // so a typed email survives the switch.
   useEffect(() => {
     clearError();
-  }, [tab, clearError]);
+    clearErrors();
+  }, [tab, clearError, clearErrors]);
 
   const isRegister = tab === "register";
   const loading = isLoading || isSubmitting;
+  const inputClass = (hasError) =>
+    `${InputClass} ${hasError ? InputErrorClass : ""}`;
+
+  // submitAuth rejects on failure; useAuth has already turned that into the
+  // banner message, so there is nothing left to do here but stop the throw.
+  const onSubmit = (data) => submitAuth(data, tab).catch(() => {});
 
   return (
-    <div className="space-y-4">
-      {/* Глобальная ошибка */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
-          <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-sm text-red-800 font-medium">{error}</p>
-          </div>
-          <button
-            onClick={clearError}
-            className="text-red-400 hover:text-red-600 transition-colors"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+    // noValidate hands validation to react-hook-form. Without it the browser's
+    // own check on type="email" runs first, silently cancels the submit and
+    // shows a native bubble — so none of the messages below ever appeared.
+    <form
+      onSubmit={handleSubmit(onSubmit)}
+      noValidate
+      className="flex flex-col gap-4"
+    >
+      <AlertBanner message={error} onDismiss={clearError} />
+
+      <Field label="Email" error={errors.email}>
+        <input
+          type="email"
+          placeholder="you@example.com"
+          disabled={loading}
+          className={inputClass(errors.email)}
+          {...register("email", {
+            required: "Email is required",
+            pattern: {
+              value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+              message: "That doesn't look like an email",
+            },
+          })}
+        />
+      </Field>
+
+      {isRegister && (
+        <Field label="Nickname" error={errors.nickname}>
+          <input
+            type="text"
+            placeholder="How people will see you"
+            disabled={loading}
+            className={inputClass(errors.nickname)}
+            {...register("nickname", {
+              required: "Nickname is required",
+              minLength: { value: 3, message: "At least 3 characters" },
+            })}
+          />
+        </Field>
       )}
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-        {/* Email */}
-        <div className="space-y-2">
-          <input
-            type="email"
-            placeholder="Enter email"
-            disabled={loading}
-            {...register("email", {
-              required: "Email is required",
-              pattern: {
-                value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                message: "Неверный формат email",
-              },
-            })}
-            className={`${InputClass} ${
-              loading ? "opacity-60 cursor-not-allowed" : ""
-            }`}
-          />
-          {errors.email && (
-            <p className="text-red-600 text-sm flex items-center gap-1">
-              <AlertCircle className="h-4 w-4" />
-              {errors.email.message}
-            </p>
-          )}
-        </div>
+      <Field label="Password" error={errors.password}>
+        <input
+          type="password"
+          placeholder="At least 6 characters"
+          disabled={loading}
+          className={inputClass(errors.password)}
+          {...register("password", {
+            required: "Password is required",
+            minLength: { value: 6, message: "At least 6 characters" },
+          })}
+        />
+      </Field>
 
-        {/* Nickname (только для регистрации) */}
-        {isRegister && (
-          <div className="space-y-2">
-            <input
-              type="text"
-              placeholder="Your nickname"
-              disabled={loading}
-              {...register("nickname", {
-                required: "Nickname is required",
-                minLength: { value: 3, message: "Минимум 3 символа" },
-              })}
-              className={`${InputClass} ${
-                loading ? "opacity-60 cursor-not-allowed" : ""
-              }`}
-            />
-            {errors.nickname && (
-              <p className="text-red-600 text-sm flex items-center gap-1">
-                <AlertCircle className="h-4 w-4" />
-                {errors.nickname.message}
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Password */}
-        <div className="space-y-2">
+      {isRegister && (
+        <Field label="Repeat password" error={errors.confirmPassword}>
           <input
             type="password"
-            placeholder="Your password"
+            placeholder="Same password again"
             disabled={loading}
-            {...register("password", {
-              required: "Password is required",
-              minLength: { value: 6, message: "Минимум 6 символов" },
+            className={inputClass(errors.confirmPassword)}
+            {...register("confirmPassword", {
+              required: "Please repeat the password",
+              validate: (value) =>
+                value === password || "Passwords don't match",
             })}
-            className={`${InputClass} ${
-              loading ? "opacity-60 cursor-not-allowed" : ""
-            }`}
           />
-          {errors.password && (
-            <p className="text-red-600 text-sm flex items-center gap-1">
-              <AlertCircle className="h-4 w-4" />
-              {errors.password.message}
-            </p>
-          )}
-        </div>
+        </Field>
+      )}
 
-        {/* Confirm Password (только для регистрации) */}
-        {isRegister && (
-          <div className="space-y-2">
-            <input
-              type="password"
-              placeholder="Repeat password"
-              disabled={loading}
-              {...register("confirmPassword", {
-                required: password ? "Repeat password" : false,
-                validate: (value) =>
-                  !value || value === password || "Пароли не совпадают",
-              })}
-              className={`${InputClass} ${
-                loading ? "opacity-60 cursor-not-allowed" : ""
-              }`}
-            />
-            {errors.confirmPassword && (
-              <p className="text-red-600 text-sm flex items-center gap-1">
-                <AlertCircle className="h-4 w-4" />
-                {errors.confirmPassword.message}
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Submit Button */}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full hover:bg-[#5865F2] bg-[#3B4288] transition duration-300 py-2.5 rounded-lg text-white font-semibold disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-        >
-          {loading && <Loader2 className="h-5 w-5 animate-spin" />}
-          {loading ? "Загрузка..." : isRegister ? "Create account" : "Login"}
-        </button>
-      </form>
-    </div>
+      <button
+        type="submit"
+        disabled={loading}
+        className={`${ButtonPrimaryClass} mt-1 w-full`}
+      >
+        {loading && <Spinner />}
+        {loading
+          ? isRegister
+            ? "Creating account…"
+            : "Signing in…"
+          : isRegister
+            ? "Create account"
+            : "Sign in"}
+      </button>
+    </form>
   );
 }

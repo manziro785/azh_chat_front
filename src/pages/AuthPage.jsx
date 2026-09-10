@@ -1,55 +1,63 @@
-import { useNavigate } from "react-router";
+import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { useState } from "react";
 import AuthForm from "../components/auth/AuthForm";
+
+const TABS = [
+  { id: "login", label: "Sign in" },
+  { id: "register", label: "Sign up" },
+];
 
 export const AuthPage = () => {
   const navigate = useNavigate();
   const [tab, setTab] = useState("login");
 
   return (
-    <div className="min-h-screen relative overflow-hidden flex items-center justify-center p-4">
-      <div className="absolute inset-0 opacity-10">
-        <div className="absolute top-16 left-16 w-72 h-72 bg-blue-400 rounded-full blur-3xl mix-blend-soft-light" />
-        <div className="absolute bottom-16 right-16 w-96 h-96 bg-cyan-400 rounded-full blur-3xl mix-blend-soft-light" />
-      </div>
+    <div className="flex min-h-screen items-center justify-center bg-canvas p-4">
       <button
-        onClick={() => navigate(-1)}
-        className="inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-all disabled:opacity-50 disabled:pointer-events-none outline-none focus-visible:ring-2 focus-visible:ring-offset-2 bg-transparent text-gray-800 hover:bg-gray-800 absolute top-4 left-4 z-20 p-2 rounded-full hover:bg-blue-100 transition-all"
+        onClick={() => navigate("/")}
+        aria-label="Back"
+        className="absolute top-4 left-4 grid h-9 w-9 cursor-pointer place-items-center rounded-[10px] border border-line-btn bg-raised text-ink-2 transition-colors hover:bg-hover-btn hover:text-ink"
       >
-        <ArrowLeft className="w-6 h-6 text-blue-500" />
+        <ArrowLeft className="h-4 w-4" />
       </button>
-      <div className="relative z-10 w-full max-w-md">
-        <div className="bg-[var(--color-main)] backdrop-blur-lg shadow-2xl border border-none rounded-2xl flex flex-col gap-6 overflow-hidden">
-          <h3 className="text-center -mb-5 text-3xl font-semibold mt-10">
-            Welcome!
-          </h3>
-          <p className="text-center text-[#99A1AF]">Enter your information</p>
-          <div className="px-8 py-6 :pb-8">
-            <div className="grid w-full grid-cols-2 mb-6 rounded-lg overflow-hidden border border-[#3B4288] shadow-sm">
+
+      <div className="w-full max-w-[420px]">
+        <div className="mb-7 flex items-center gap-[9px]">
+          <div className="h-[22px] w-[22px] rounded-[7px] bg-[linear-gradient(140deg,#5b83ff,#3ad0b0)]" />
+          <span className="text-[15px] font-bold tracking-[-0.2px]">
+            AzhChat
+          </span>
+        </div>
+
+        <div className="rounded-[18px] border border-line-strong bg-surface p-6 shadow-[0_24px_60px_rgba(0,0,0,.55)] sm:p-7">
+          <h1 className="text-[22px] font-bold tracking-[-0.4px]">
+            {tab === "login" ? "Welcome back" : "Create your account"}
+          </h1>
+          <p className="mt-1 text-[12.5px] text-muted text-pretty">
+            {tab === "login"
+              ? "Sign in to get back to your channels."
+              : "One account, all your channels. No email confirmation needed."}
+          </p>
+
+          <div className="mt-5 mb-6 grid grid-cols-2 gap-1 rounded-[11px] border border-line bg-field p-1">
+            {TABS.map((item) => (
               <button
-                className={`py-3 text-sm font-medium transition-all rounded-l-lg ${
-                  tab === "login"
-                    ? "bg-[#3B4288] text-[var(--color-text)] shadow-inner"
-                    : "bg-transparent text-[#5865F2] hover:bg-blue-100"
+                key={item.id}
+                onClick={() => setTab(item.id)}
+                aria-pressed={tab === item.id}
+                className={`h-[34px] cursor-pointer rounded-lg text-[12.5px] font-semibold transition-colors ${
+                  tab === item.id
+                    ? "bg-accent text-white"
+                    : "bg-transparent text-muted hover:text-ink"
                 }`}
-                onClick={() => setTab("login")}
               >
-                Sign in
+                {item.label}
               </button>
-              <button
-                className={`py-3 text-sm font-medium transition-all rounded-r-lg ${
-                  tab === "register"
-                    ? "bg-[#3B4288] text-[var(--color-text)] shadow-inner"
-                    : "bg-transparent text-[#5865F2] hover:bg-blue-100"
-                }`}
-                onClick={() => setTab("register")}
-              >
-                Sign up
-              </button>
-            </div>
-            <AuthForm tab={tab} />
+            ))}
           </div>
+
+          <AuthForm tab={tab} />
         </div>
       </div>
     </div>

@@ -1,14 +1,27 @@
-import { InputClass } from "../../styles";
+import { AlertCircle } from "lucide-react";
+import {
+  FieldErrorClass,
+  FieldHintClass,
+  InputClass,
+  InputErrorClass,
+  LabelClass,
+} from "../../styles";
 
-export const FormInput = ({
-  label,
-  LabelColor = "text-gray-600",
-  ...props
-}) => {
-  return (
-    <div className="mt-5 first:mt-0">
-      {label && <p className={`text-lg mb-2 ${LabelColor}`}>{label}</p>}
-      <input className={InputClass} {...props} />
-    </div>
-  );
-};
+export const FormInput = ({ label, error, hint, mono = false, ...props }) => (
+  <label className="block">
+    {label && <span className={LabelClass}>{label}</span>}
+    <input
+      className={`${InputClass} ${error ? InputErrorClass : ""} ${
+        mono ? "font-mono tracking-[.12em]" : ""
+      }`}
+      {...props}
+    />
+    {error && (
+      <span className={FieldErrorClass}>
+        <AlertCircle className="h-[13px] w-[13px] flex-none" />
+        {error}
+      </span>
+    )}
+    {!error && hint && <span className={FieldHintClass}>{hint}</span>}
+  </label>
+);

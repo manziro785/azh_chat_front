@@ -2,7 +2,8 @@ import { useMutation } from "@tanstack/react-query";
 import { fetchLogin, fetchRegister } from "../api/auth";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
-import { useState } from "react";
+import { useCallback, useState } from "react";
+import { apiErrorMessage } from "../lib/apiError";
 
 export const useAuth = () => {
   const navigate = useNavigate();
@@ -15,21 +16,18 @@ export const useAuth = () => {
     navigate("/dashboard");
   };
 
-  const handleError = (error) => {
-    const msg = error instanceof Error ? error.message : String(error);
+  const handleError = (err) => {
+    const status = err?.response?.status;
 
-    // Обработка разных типов ошибок
-    if (msg.includes("401") || msg.includes("Unauthorized")) {
-      setError("Неверный email или пароль");
-    } else if (msg.includes("409") || msg.includes("already exists")) {
-      setError("Пользователь с таким email уже существует");
-    } else if (msg.includes("Network")) {
-      setError("Ошибка сети. Проверьте подключение");
-    } else {
-      setError(msg || "Произошла ошибка. Попробуйте снова");
+    if (!err?.response) {
+      setError("Network error. Check your connection and try again.");
+      return;
     }
-
-    console.error("Auth error:", msg);
+    if (status === 401) {
+      setError("Wrong email or password.");
+      return;
+    }
+    setError(apiErrorMessage(err, "Something went wrong. Please try again."));
   };
 
   const loginMutation = useMutation({
@@ -45,16 +43,16 @@ export const useAuth = () => {
   });
 
   const submitAuth = async (data, type) => {
-    setError(null); // Очищаем предыдущие ошибки
-
-    if (type === "login") {
-      return loginMutation.mutateAsync(data);
-    } else {
-      return registerMutation.mutateAsync(data);
-    }
+    setError(null);
+    const mutation = type === "login" ? loginMutation : registerMutation;
+    return mutation.mutateAsync(data);
   };
 
-  const clearError = () => setError(null);
+  // Must be stable: AuthForm clears the banner in an effect keyed on the tab,
+  // and this function. Recreating it every render made that effect run after
+  // every render — including the one that had just set the error — so the
+  // banner was wiped before it could ever be painted.
+  const clearError = useCallback(() => setError(null), []);
 
   return {
     submitAuth,

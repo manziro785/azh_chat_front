@@ -1,91 +1,73 @@
-import { useState, useEffect } from "react";
-import { BaseModal } from "./BaseModal";
+import { useState } from "react";
+import { BaseModal } from "./baseModal";
 import { FormInput } from "../ui/formInput";
-import { ActionButtons } from "../ui/actionButton";
 import { useUpdateChannel } from "../../hooks/channel/useUpdateChannel";
 import { useChannelContext } from "../../hooks/channel/useChannelContext";
+import { apiErrorMessage } from "../../lib/apiError";
 
-export const EditGroupModal = ({ open, onClose = () => {} }) => {
-  const { activeChannel, refetchChannels } = useChannelContext();
-  const { updateChannel, isPending, error } = useUpdateChannel();
-  const [groupName, setGroupName] = useState("");
-  const [description, setDescription] = useState("");
+export const EditGroupModal = ({ open, onClose }) => {
+  const { activeChannel } = useChannelContext();
+  const { updateChannel, isPending } = useUpdateChannel();
 
-  useEffect(() => {
-    if (activeChannel) {
-      setGroupName(activeChannel.name || "");
-      setDescription(activeChannel.description || "");
-    }
-  }, [activeChannel]);
+  // Mounted only while open (see Dashboard), so the fields can be seeded once
+  // from the channel instead of being kept in sync by an effect.
+  const [name, setName] = useState(() => activeChannel?.name ?? "");
+  const [description, setDescription] = useState(
+    () => activeChannel?.description ?? ""
+  );
+  const [nameError, setNameError] = useState("");
+  const [serverError, setServerError] = useState("");
 
-  const handleSave = async () => {
-    if (!activeChannel?.id) {
-      console.error("No active channel");
-      return;
-    }
+  if (!activeChannel) return null;
 
-    if (!groupName.trim()) {
-      console.error("Group name is required");
+  const handleSubmit = async () => {
+    if (name.trim().length < 3) {
+      setNameError("At least 3 characters");
       return;
     }
 
     try {
       await updateChannel({
         idChannel: activeChannel.id,
-        channelData: {
-          name: groupName.trim(),
-          description: description.trim(),
-        },
+        channelData: { name: name.trim(), description: description.trim() },
       });
-
-      console.log("Group updated successfully");
-
-      if (refetchChannels) {
-        await refetchChannels();
-      }
-
       onClose();
-    } catch (err) {
-      console.error("Error updating group:", err);
+    } catch (error) {
+      setServerError(apiErrorMessage(error, "Couldn't update the channel"));
     }
   };
 
-  if (!activeChannel) {
-    return null;
-  }
-
   return (
-    <BaseModal open={open} onClose={onClose} title="Edit Group">
-      <div className="px-6 py-6">
-        <div className="space-y-4">
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-              {error.message || "Failed to update group"}
-            </div>
-          )}
-          <FormInput
-            label="Group name"
-            labelColor="text-blue-500"
-            value={groupName}
-            onChange={(e) => setGroupName(e.target.value)}
-            disabled={isPending}
-          />
-          <FormInput
-            label="Description"
-            labelColor="text-blue-500"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            disabled={isPending}
-          />
-          <ActionButtons
-            onCancel={onClose}
-            onSubmit={handleSave}
-            submitText={isPending ? "Saving..." : "Save"}
-            showCancel={false}
-            disabled={isPending}
-          />
-        </div>
-      </div>
+    <BaseModal
+      open={open}
+      onClose={onClose}
+      title="Edit channel"
+      subtitle="Admins only"
+      cancelLabel="Cancel"
+      error={serverError}
+      onDismissError={() => setServerError("")}
+      confirmLabel={isPending ? "Saving…" : "Save"}
+      onConfirm={handleSubmit}
+      busy={isPending}
+    >
+      <FormInput
+        label="Name"
+        value={name}
+        onChange={(e) => {
+          setName(e.target.value);
+          setNameError("");
+        }}
+        placeholder="Channel name"
+        error={nameError}
+        disabled={isPending}
+      />
+      <FormInput
+        label="Description"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="What is it about?"
+        disabled={isPending}
+      />
     </BaseModal>
   );
 };
